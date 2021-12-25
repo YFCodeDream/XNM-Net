@@ -1,16 +1,16 @@
-import os,sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # to import shared utils
+import argparse
+import json
+import os
+import sys
+
 import torch
 from tqdm import tqdm
-import argparse
-import numpy as np
-import os
-import json
-from IPython import embed
 
 from DataLoader import VQADataLoader
 from model.net import XNMNet
 from utils.misc import todevice
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # to import shared utils
 
 
 def batch_accuracy(predicted, true):
@@ -84,7 +84,8 @@ if __name__ == '__main__':
     parser.add_argument('--val_feature_h5', default='trainval_feature.h5')
     parser.add_argument('--test_feature_h5', default='test_feature.h5')
     parser.add_argument('--output_file', help='used only in test mode')
-    parser.add_argument('--test_question_json', help='path to v2_OpenEnded_mscoco_test2015_questions.json, used only in test mode')
+    parser.add_argument('--test_question_json',
+                        help='path to v2_OpenEnded_mscoco_test2015_questions.json, used only in test mode')
     args = parser.parse_args()
 
     args.vocab_json = os.path.join(args.input_dir, args.vocab_json)
@@ -92,7 +93,7 @@ if __name__ == '__main__':
     args.test_question_pt = os.path.join(args.input_dir, args.test_question_pt)
     args.val_feature_h5 = os.path.join(args.input_dir, args.val_feature_h5)
     args.test_feature_h5 = os.path.join(args.input_dir, args.test_feature_h5)
-    
+
     device = 'cuda'
     loaded = torch.load(args.ckpt, map_location={'cuda:0': 'cpu'})
     model_kwargs = loaded['model_kwargs']
@@ -130,7 +131,7 @@ if __name__ == '__main__':
         results = test(model, test_loader, device)
         questions = json.load(open(args.test_question_json))['questions']
         assert len(results) == len(questions)
-        results = [{'answer':r, "question_id":q['question_id']} for r,q in zip(results, questions)]
+        results = [{'answer': r, "question_id": q['question_id']} for r, q in zip(results, questions)]
         with open(args.output_file, 'w') as f:
             json.dump(results, f)
         print('write into %s' % args.output_file)

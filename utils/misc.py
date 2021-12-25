@@ -1,14 +1,18 @@
 import torch
 
+
 def todevice(tensor, device):
     if isinstance(tensor, list) or isinstance(tensor, tuple):
         assert isinstance(tensor[0], torch.Tensor)
+        # 如果传进来是个列表或元组，每个元素是一个tensor，就把每个元素转换到指定的device上
         return [todevice(t, device) for t in tensor]
     elif isinstance(tensor, torch.Tensor):
         return tensor.to(device)
 
+
 def invert_dict(d):
     return {v: k for k, v in d.items()}
+
 
 def convert_david_program_to_mine(program, vocab):
     # program is a list of str
@@ -21,28 +25,30 @@ def convert_david_program_to_mine(program, vocab):
             function = 'equal'
         elif 'query' in f:
             function = 'query'
-            value_input = f[6:] # <cat> of query_<cat>
+            value_input = f[6:]  # <cat> of query_<cat>
         elif 'same' in f:
             function = 'same'
-            value_input = f[5:] # <cat> of same_<cat>
+            value_input = f[5:]  # <cat> of same_<cat>
         elif 'filter_' in f:
             function = 'filter'
-            value_input = f[f.find('[')+1:-1]
+            value_input = f[f.find('[') + 1:-1]
         elif 'relate' in f:
             function = 'relate'
-            value_input = f[f.find('[')+1:-1]
-        
+            value_input = f[f.find('[') + 1:-1]
+
         functions.append(function)
         value_inputs.append(value_input)
     functions = [vocab['program_token_to_idx'][f] for f in functions]
     value_inputs = [vocab['question_token_to_idx'][v] for v in value_inputs]
     return functions, value_inputs
 
+
 def convert_to_one_hot(indices, num_classes):
     batch_size = indices.size(0)
     indices = indices.unsqueeze(1)
     one_hot = indices.data.new(batch_size, num_classes).zero_().scatter_(1, indices.data, 1)
     return one_hot
+
 
 def reverse_padded_sequence(inputs, lengths, batch_first=False):
     """Reverses sequences according to their lengths.
@@ -66,7 +72,7 @@ def reverse_padded_sequence(inputs, lengths, batch_first=False):
                         for _ in range(inputs.size(0))]
     for i, length in enumerate(lengths):
         if length > 0:
-            reversed_indices[i][:length] = reversed_indices[i][length-1::-1]
+            reversed_indices[i][:length] = reversed_indices[i][length - 1::-1]
     reversed_indices = torch.LongTensor(reversed_indices).unsqueeze(2).expand_as(inputs).to(inputs.device)
     reversed_inputs = torch.gather(inputs, 1, reversed_indices)
     if not batch_first:

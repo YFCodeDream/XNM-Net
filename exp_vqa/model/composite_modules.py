@@ -31,6 +31,7 @@ stack_ptr: (batch_size, stack_len)
 mem: (batch_size, dim_vision * glimpse)
 """
 
+
 class NoOpModule(nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
@@ -45,12 +46,12 @@ class AndModule(nn.Module):
 
     def forward(self, vision_feat, feat, feat_edge, c_i, relation_mask, att_stack, stack_ptr, mem_in):
         att2 = _read_from_stack(att_stack, stack_ptr)
-        att_stack = _write_to_stack(att_stack, stack_ptr, torch.zeros(feat.size(0),feat.size(1),1).to(feat.device))
+        att_stack = _write_to_stack(att_stack, stack_ptr, torch.zeros(feat.size(0), feat.size(1), 1).to(feat.device))
         stack_ptr = _move_ptr_bw(stack_ptr)
         att1 = _read_from_stack(att_stack, stack_ptr)
         att_out = torch.min(att1, att2)
         att_stack = _write_to_stack(att_stack, stack_ptr, att_out)
-        return att_stack, stack_ptr, mem_in.clone().zero_() 
+        return att_stack, stack_ptr, mem_in.clone().zero_()
 
 
 class FindModule(nn.Module):
@@ -61,14 +62,13 @@ class FindModule(nn.Module):
         self.x_conv = nn.Linear(kwargs['dim_v'], kwargs['glimpses'])
         self.drop = nn.Dropout(kwargs['dropout_prob'])
         self.fusion = Fusion()
-        
 
     def forward(self, vision_feat, feat, feat_edge, c_i, relation_mask, att_stack, stack_ptr, mem_in):
-        query = self.map_c(self.drop(c_i)).unsqueeze(1) # (batch_size, 1, dim_v)
+        query = self.map_c(self.drop(c_i)).unsqueeze(1)  # (batch_size, 1, dim_v)
         x = self.fusion(feat, query)
-        att_out = self.x_conv(self.drop(x)) # (batch_size, num_feat, glimpse)
+        att_out = self.x_conv(self.drop(x))  # (batch_size, num_feat, glimpse)
         att_out = F.softmax(att_out, dim=1)  # (batch_size, num_feat, glimpse)
-        #att_out = torch.sigmoid(att_out)
+        # att_out = torch.sigmoid(att_out)
         stack_ptr = _move_ptr_fw(stack_ptr)
         att_stack = _write_to_stack(att_stack, stack_ptr, att_out)
         return att_stack, stack_ptr, mem_in.clone().zero_()
@@ -81,13 +81,14 @@ class FilterModule(nn.Module):
         self.And = AndModule(**kwargs)
 
     def forward(self, vision_feat, feat, feat_edge, c_i, relation_mask, att_stack, stack_ptr, mem_in):
-        att_stack, stack_ptr, _ = self.Find(vision_feat, feat, feat_edge, c_i, relation_mask, att_stack, stack_ptr, mem_in)
-        att_stack, stack_ptr, _ = self.And(vision_feat, feat, feat_edge, c_i, relation_mask, att_stack, stack_ptr, mem_in)
+        att_stack, stack_ptr, _ = self.Find(vision_feat, feat, feat_edge, c_i, relation_mask, att_stack, stack_ptr,
+                                            mem_in)
+        att_stack, stack_ptr, _ = self.And(vision_feat, feat, feat_edge, c_i, relation_mask, att_stack, stack_ptr,
+                                           mem_in)
         return att_stack, stack_ptr, mem_in.clone().zero_()
 
 
 class TransformModule(nn.Module):
-
     def __init__(self, **kwargs):
         super().__init__()
         self.map_c = nn.Linear(kwargs['dim_hidden'], kwargs['dim_edge'])
@@ -100,10 +101,10 @@ class TransformModule(nn.Module):
         elt_prod = query * feat_edge
         weit_matrix = F.sigmoid(torch.sum(elt_prod, dim=3))
         weit_matrix = weit_matrix * relation_mask.float()
-        att_in = _read_from_stack(att_stack, stack_ptr).permute(0,2,1) #(batch_size, glimpse, att_dim)
-        att_out = torch.matmul(att_in, weit_matrix).permute(0,2,1) #(batch_size, att_dim, glimpse)
+        att_in = _read_from_stack(att_stack, stack_ptr).permute(0, 2, 1)  # (batch_size, glimpse, att_dim)
+        att_out = torch.matmul(att_in, weit_matrix).permute(0, 2, 1)  # (batch_size, att_dim, glimpse)
         norm = torch.max(att_out, dim=1, keepdim=True)[0].detach()
-        norm[norm<=1] = 1
+        norm[norm <= 1] = 1
         att_out /= norm
         # ---------
         att_stack = _write_to_stack(att_stack, stack_ptr, att_out)
@@ -117,27 +118,22 @@ class DescribeModule(nn.Module):
 
     def forward(self, vision_feat, feat, feat_edge, c_i, relation_mask, att_stack, stack_ptr, mem_in):
         batch_size = feat.size(0)
-        att_in = _read_from_stack(att_stack, stack_ptr).permute(0,2,1)
+        att_in = _read_from_stack(att_stack, stack_ptr).permute(0, 2, 1)
         mem_out = torch.bmm(att_in, vision_feat)
 
-        mem_out = mem_out.view(batch_size, -1) #(batch_size, glimpse*dim_vision)
+        mem_out = mem_out.view(batch_size, -1)  # (batch_size, glimpse*dim_vision)
         return att_stack, stack_ptr, mem_out
-
-
-
 
 
 class Fusion(nn.Module):
     """ Crazy multi-modal fusion: negative squared difference minus relu'd sum
     """
+
     def __init__(self):
         super().__init__()
 
     def forward(self, x, y):
-        return - (x - y)**2 + F.relu(x + y)
-
-
-
+        return - (x - y) ** 2 + F.relu(x + y)
 
 
 def _move_ptr_fw(stack_ptr):
@@ -152,7 +148,7 @@ def _move_ptr_fw(stack_ptr):
     # when the stack pointer is already at the stack top, keep
     # the pointer in the same location (otherwise the pointer will be all zero)
     stack_top_mask = torch.zeros(stack_len).to(stack_ptr.device)
-    stack_top_mask[stack_len - 1] = 1 # [stack_len, ]
+    stack_top_mask[stack_len - 1] = 1  # [stack_len, ]
     new_stack_ptr += stack_top_mask * stack_ptr
     return new_stack_ptr
 
@@ -180,7 +176,7 @@ def _read_from_stack(att_stack, stack_ptr):
     stack_ptr_expand = stack_ptr.view(batch_size, 1, 1, stack_len)
     # The stack pointer is a one-hot vector, so just do dot product
     att = torch.sum(att_stack * stack_ptr_expand, dim=-1)
-    return att # (batch_size, att_dim, glimpse)
+    return att  # (batch_size, att_dim, glimpse)
 
 
 def _write_to_stack(att_stack, stack_ptr, att):
@@ -193,7 +189,7 @@ def _write_to_stack(att_stack, stack_ptr, att):
     if att.dim() == 3:
         att = att.unsqueeze(3)
     att_stack = att * stack_ptr_expand + att_stack * (1 - stack_ptr_expand)
-    return att_stack # (batch_size, att_dim, glimpse, stack_len)
+    return att_stack  # (batch_size, att_dim, glimpse, stack_len)
 
 
 def _sharpen_ptr(stack_ptr, hard):
@@ -234,7 +230,7 @@ def _build_module_validity_mat(stack_len, module_names):
         # the stack ptr diff=(MODULE_OUTPUT_NUM[m] - MODULE_INPUT_NUM[m])
         # ensure that ptr + diff <= stack_len - 1 (stack top)
         max_ptr_pos = (
-            stack_len - 1 + MODULE_INPUT_NUM[m] - MODULE_OUTPUT_NUM[m])
-        module_validity_mat[min_ptr_pos:max_ptr_pos+1, n_m] = 1.
+                stack_len - 1 + MODULE_INPUT_NUM[m] - MODULE_OUTPUT_NUM[m])
+        module_validity_mat[min_ptr_pos:max_ptr_pos + 1, n_m] = 1.
 
     return module_validity_mat

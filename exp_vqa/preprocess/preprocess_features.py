@@ -23,12 +23,12 @@ def main():
     args = parser.parse_args()
     assert os.path.isdir(args.input_tsv_folder)
 
-    FIELDNAMES = ['image_id', 'image_w','image_h','num_boxes', 'boxes', 'features']
+    FIELDNAMES = ['image_id', 'image_w', 'image_h', 'num_boxes', 'boxes', 'features']
 
     features_shape = (
         82783 + 40504 if not args.test else 81434,  # number of images in trainval or in test
-        2048, # dim_vision,
-        36, # 36 for fixed case, 100 for the adaptive case
+        2048,  # dim_vision,
+        36,  # 36 for fixed case, 100 for the adaptive case
     )
     boxes_shape = (
         features_shape[0],
@@ -59,12 +59,12 @@ def main():
             widths[i] = int(item['image_w'])
             heights[i] = int(item['image_h'])
 
-            buf = base64.decodestring(item['features'].encode('utf8'))
+            buf = base64.decodebytes(item['features'].encode('utf8'))
             array = np.frombuffer(buf, dtype='float32')
             array = array.reshape((-1, 2048)).transpose()
             features[i, :, :array.shape[1]] = array
 
-            buf = base64.decodestring(item['boxes'].encode('utf8'))
+            buf = base64.decodebytes(item['boxes'].encode('utf8'))
             array = np.frombuffer(buf, dtype='float32')
             array = array.reshape((-1, 4)).transpose()
             boxes[i, :, :array.shape[1]] = array
