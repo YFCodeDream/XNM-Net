@@ -9,6 +9,7 @@ class AttentionModule(nn.Module):
     Corresponding CLEVR programs: 'filter_<att>'
     Output: attention
     """
+
     def __init__(self, **kwargs):
         super().__init__()
         self.attendNode = AttendNodeModule()
@@ -30,13 +31,14 @@ class SameModule(nn.Module):
     """
     Corresponding CLEVR programs: 'same_<cat>' 
     Output: attention
-    """    
+    """
+
     def __init__(self, **kwargs):
         super().__init__()
         self.query = QueryModule(**kwargs)
         self.attend = AttentionModule(**kwargs)
         self.attnNot = NotModule()
-        
+
     def forward(self, attn, feat, query):
         """
         Args:
@@ -51,25 +53,24 @@ class SameModule(nn.Module):
         return out
 
 
-
 class ExistOrCountModule(nn.Module):
     """
     Corresponding CLEVR programs: 'exist', 'count'
     Output: encoding
     """
+
     def __init__(self, **kwargs):
         super().__init__()
         self.projection = nn.Sequential(
-                nn.Linear(1, 128),
-                nn.ReLU(),
-                nn.Linear(128, kwargs['dim_v'])
-                )
+            nn.Linear(1, 128),
+            nn.ReLU(),
+            nn.Linear(128, kwargs['dim_v'])
+        )
 
     def forward(self, attn):
         # sum up the node attention
-        out = self.projection(torch.sum(attn, dim=0, keepdim=True)) 
+        out = self.projection(torch.sum(attn, dim=0, keepdim=True))
         return out
-
 
 
 class RelateModule(nn.Module):
@@ -77,6 +78,7 @@ class RelateModule(nn.Module):
     Corresponding CLEVR programs: 'relate_<cat>'
     Output: attention
     """
+
     def __init__(self, **kwargs):
         super().__init__()
         self.attendEdge = AttendEdgeModule()
@@ -100,6 +102,7 @@ class QueryModule(nn.Module):
     Corresponding CLEVR programs: 'query_<cat>'
     Output: encoding
     """
+
     def __init__(self, **kwargs):
         super().__init__()
         dim_v = kwargs['dim_v']
@@ -107,7 +110,7 @@ class QueryModule(nn.Module):
         self.query_to_weight = nn.Sequential(
             nn.Linear(dim_v, K),
             nn.Softmax(dim=0),
-                )
+        )
         self.mappings = nn.Parameter(torch.zeros((K, dim_v, dim_v)))
         nn.init.normal_(self.mappings.data, mean=0, std=0.01)
 
@@ -121,9 +124,9 @@ class QueryModule(nn.Module):
         out = torch.matmul(attn, feat)
         # compute a probability distribution over K aspects
         weight = self.query_to_weight(query)
-        mapping = torch.sum(self.mappings * weight.view(-1,1,1), dim=0) # (dim_v, dim_v)
+        mapping = torch.sum(self.mappings * weight.view(-1, 1, 1), dim=0)  # (dim_v, dim_v)
         out = torch.matmul(mapping, out)
-        return out # (dim_v, )
+        return out  # (dim_v, )
 
 
 class ComparisonModule(nn.Module):
@@ -131,14 +134,15 @@ class ComparisonModule(nn.Module):
     Corresponding CLEVR programs: 'equal_<cat>', 'equal_integer', 'greater_than' and 'less_than'
     Output: encoding
     """
+
     def __init__(self, **kwargs):
         super().__init__()
         dim_v = kwargs['dim_v']
         self.projection = nn.Sequential(
-                nn.Linear(dim_v, 128),
-                nn.ReLU(),
-                nn.Linear(128, dim_v)
-            )
+            nn.Linear(dim_v, 128),
+            nn.ReLU(),
+            nn.Linear(128, dim_v)
+        )
 
     def forward(self, enc1, enc2):
         """
@@ -147,5 +151,3 @@ class ComparisonModule(nn.Module):
         input = enc1 - enc2
         out = self.projection(input)
         return out
-
-        

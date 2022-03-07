@@ -9,6 +9,7 @@ class AttentionModule(nn.Module):
     Corresponding CLEVR programs: 'filter_<att>'
     Output: attention
     """
+
     def __init__(self):
         super().__init__()
         self.attendNode = AttendNodeModule()
@@ -34,13 +35,14 @@ class SameModule(nn.Module):
     Corresponding CLEVR programs: 'same_<cat>' 
     Output: attention
     """
+
     def __init__(self):
         super().__init__()
         self.relate = RelateModule()
         self.transConn = TransferModule()
         self.attnAnd = AndModule()
         self.attnNot = NotModule()
-        
+
     def forward(self, attn, cat_matrix, edge_cat_vectors, query, conn_matrix):
         attribute_attn = self.relate(attn, cat_matrix, edge_cat_vectors, query, None)
         new_object_attn = self.transConn(attribute_attn, conn_matrix)
@@ -49,24 +51,23 @@ class SameModule(nn.Module):
         return out
 
 
-
 class ExistOrCountModule(nn.Module):
     """
     Corresponding CLEVR programs: 'exist', 'count'
     Output: encoding
     """
+
     def __init__(self, dim_v):
         super().__init__()
         self.projection = nn.Sequential(
-                nn.Linear(1, 128),
-                nn.ReLU(),
-                nn.Linear(128, dim_v)
-                )
+            nn.Linear(1, 128),
+            nn.ReLU(),
+            nn.Linear(128, dim_v)
+        )
 
     def forward(self, attn):
-        out = self.projection(torch.sum(attn, dim=0, keepdim=True)) 
+        out = self.projection(torch.sum(attn, dim=0, keepdim=True))
         return out
-
 
 
 class RelateModule(nn.Module):
@@ -74,6 +75,7 @@ class RelateModule(nn.Module):
     Corresponding CLEVR programs: 'relate_<cat>'. Besides, it is also used inside QueryModule and SameModule
     Output: attention
     """
+
     def __init__(self):
         super().__init__()
         self.attendEdge = AttendEdgeModule()
@@ -97,6 +99,7 @@ class QueryModule(nn.Module):
     Corresponding CLEVR programs: 'query_<cat>'
     Output: encoding
     """
+
     def __init__(self):
         super().__init__()
         self.relate = RelateModule()
@@ -104,7 +107,7 @@ class QueryModule(nn.Module):
     def forward(self, attn, cat_matrix, edge_cat_vectors, query, feat):
         attribute_attn = self.relate(attn, cat_matrix, edge_cat_vectors, query, None)
         out = torch.matmul(attribute_attn, feat)
-        return out # (dim_v, )
+        return out  # (dim_v, )
 
 
 class ComparisonModule(nn.Module):
@@ -112,17 +115,16 @@ class ComparisonModule(nn.Module):
     Corresponding CLEVR programs: 'equal_<cat>', 'equal_integer', 'greater_than' and 'less_than'
     Output: encoding
     """
+
     def __init__(self, dim_v):
         super().__init__()
         self.projection = nn.Sequential(
-                nn.Linear(dim_v, 128),
-                nn.ReLU(),
-                nn.Linear(128, dim_v)
-            )
+            nn.Linear(dim_v, 128),
+            nn.ReLU(),
+            nn.Linear(128, dim_v)
+        )
 
     def forward(self, enc1, enc2):
         input = enc1 - enc2
         out = self.projection(input)
         return out
-
-        

@@ -32,11 +32,15 @@ mem: (batch_size, dim_vision * glimpse)
 """
 
 
+# 所有的模块中的forward函数都是以下形式
+# def forward(self, vision_feat, feat, feat_edge, c_i, relation_mask, att_stack, stack_ptr, mem_in):
+
 class NoOpModule(nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
 
     def forward(self, vision_feat, feat, feat_edge, c_i, relation_mask, att_stack, stack_ptr, mem_in):
+        # 无操作，直接输出
         return att_stack, stack_ptr, mem_in
 
 
@@ -49,13 +53,16 @@ class AndModule(nn.Module):
         att_stack = _write_to_stack(att_stack, stack_ptr, torch.zeros(feat.size(0), feat.size(1), 1).to(feat.device))
         stack_ptr = _move_ptr_bw(stack_ptr)
         att1 = _read_from_stack(att_stack, stack_ptr)
+
+        # and模块取a_1和a_2的最小值
         att_out = torch.min(att1, att2)
+        
         att_stack = _write_to_stack(att_stack, stack_ptr, att_out)
         return att_stack, stack_ptr, mem_in.clone().zero_()
 
 
 class FindModule(nn.Module):
-
+    # Find是AttendNode
     def __init__(self, **kwargs):
         super().__init__()
         self.map_c = nn.Linear(kwargs['dim_hidden'], kwargs['dim_v'])
@@ -70,6 +77,7 @@ class FindModule(nn.Module):
         att_out = F.softmax(att_out, dim=1)  # (batch_size, num_feat, glimpse)
         # att_out = torch.sigmoid(att_out)
         stack_ptr = _move_ptr_fw(stack_ptr)
+
         att_stack = _write_to_stack(att_stack, stack_ptr, att_out)
         return att_stack, stack_ptr, mem_in.clone().zero_()
 
@@ -218,6 +226,11 @@ def _build_module_validity_mat(stack_len, module_names):
 
     module_validity_mat is a stack_len x num_module matrix, and is used to
     multiply with stack_ptr to get validity boolean vector for the modules.
+
+    构建模块有效性矩阵，确保只有有效模块具有非零概率。
+    只有当有足够的注意力从堆栈中弹出，并且有空间推入（例如，_Find）时，模块才有效运行，
+    这样堆栈就不会因设计而下溢或溢出。
+    module_validity_mat是一个stack_len x num_module矩阵，用于与stack_ptr相乘以获得模块的有效布尔向量。
     """
 
     module_validity_mat = np.zeros((stack_len, len(module_names)), np.float32)

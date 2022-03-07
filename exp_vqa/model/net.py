@@ -48,24 +48,32 @@ class XNMNet(nn.Module):
             nn.Dropout(self.dropout_prob),
             nn.Linear(self.dim_vision, self.dim_v, bias=False),
         )
+        # 两个点的表示到一条边的表示的映射
         self.map_two_v_to_edge = nn.Sequential(
             nn.Dropout(self.dropout_prob),
             nn.Linear(self.dim_v * 2, self.dim_edge, bias=False),
         )
         self.num_token = len(self.vocab['question_token_to_idx'])
+        # token embedding在train.py中将权重设置为glove的预训练权重
         self.token_embedding = nn.Embedding(self.num_token, self.dim_word)
         self.dropout = nn.Dropout(self.dropout_prob)
 
         # modules
+        # Sec.3中提到的各种模块
+        # （这一部分核心模块，有点难看）-------------------------------------------------------------------------------------
         self.module_names = modules.MODULE_INPUT_NUM.keys()
         self.num_module = len(self.module_names)
+
         self.module_funcs = [getattr(modules, m[1:] + 'Module')(**kwargs) for m in self.module_names]
         self.module_validity_mat = modules._build_module_validity_mat(self.stack_len, self.module_names)
         self.module_validity_mat = torch.Tensor(self.module_validity_mat).to(self.device)
+
         for name, func in zip(self.module_names, self.module_funcs):
             self.add_module(name, func)
+
         # question encoder
         self.question_encoder = BiGRUEncoder(self.dim_word, self.dim_hidden)
+
         # controller
         controller_kwargs = {
             'num_module': len(self.module_names),
@@ -114,7 +122,8 @@ class XNMNet(nn.Module):
         stack_ptr = torch.zeros(batch_size, self.stack_len).to(self.device)
         stack_ptr[:, 0] = 1
         mem = torch.zeros(batch_size, self.glimpses * self.dim_vision).to(self.device)
-        ## cache for visualization
+
+        # cache for visualization
         cache_module_prob = []
         cache_att = []
 
