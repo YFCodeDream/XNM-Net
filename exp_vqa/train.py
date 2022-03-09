@@ -234,6 +234,7 @@ def main():
     # set random seed
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
+    # 如果使用空间特征，则将2048加上5，5对应process_feature里的空间特征
     if args.spatial:
         args.dim_vision += 5
 

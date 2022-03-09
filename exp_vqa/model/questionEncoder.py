@@ -6,6 +6,11 @@ from utils.misc import reverse_padded_sequence
 
 
 class BiGRUEncoder(nn.Module):
+    """
+    遵循Explainable Neural Computation via Stack Neural Module Networks模型架构
+    使用BiLSTM将问题q转换为一个d维序列（这里使用双向GRU）
+    [h_1, ..., h_S] = BiLSTM(q; theta_BiLSTM)
+    """
     def __init__(self, dim_word, dim_hidden):
         super().__init__()
         self.forward_gru = nn.GRU(dim_word, dim_hidden // 2)
@@ -23,6 +28,7 @@ class BiGRUEncoder(nn.Module):
                 input_seq_lens: [batch_size]
         """
         embedded = input_embedded  # [seq_max_len, batch_size, word_dim]
+        # 只需要取前向GRU最后的输出，不需要隐藏层了
         forward_outputs = self.forward_gru(embedded)[0]  # [seq_max_len, batch_size, dim_hidden/2]
         backward_embedded = reverse_padded_sequence(embedded, input_seq_lens)
         backward_outputs = self.backward_gru(backward_embedded)[0]

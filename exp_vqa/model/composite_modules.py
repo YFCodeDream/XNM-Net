@@ -6,6 +6,7 @@ from itertools import chain
 from utils.misc import convert_to_one_hot
 from IPython import embed
 
+# MODULE_INPUT_NUM对应这个模块需要的输入的元素个数
 MODULE_INPUT_NUM = {
     '_NoOp': 1,
     '_Find': 0,
@@ -15,6 +16,7 @@ MODULE_INPUT_NUM = {
     '_Describe': 1,
 }
 
+# MODULE_OUTPUT_NUM对应这个模块的输出元素个数
 MODULE_OUTPUT_NUM = {
     '_NoOp': 0,
     '_Find': 1,
@@ -228,22 +230,29 @@ def _build_module_validity_mat(stack_len, module_names):
     multiply with stack_ptr to get validity boolean vector for the modules.
 
     构建模块有效性矩阵，确保只有有效模块具有非零概率。
-    只有当有足够的注意力从堆栈中弹出，并且有空间推入（例如，_Find）时，模块才有效运行，
+    只有当有足够的注意力从堆栈中弹出，并且还有空间推入堆栈（例如，_Find）时，模块才有效运行，
     这样堆栈就不会因设计而下溢或溢出。
-    module_validity_mat是一个stack_len x num_module矩阵，用于与stack_ptr相乘以获得模块的有效布尔向量。
+    module_validity_mat是一个stack_len x num_module矩阵（4*6），用于与stack_ptr相乘以获得模块的有效布尔向量。
     """
 
     module_validity_mat = np.zeros((stack_len, len(module_names)), np.float32)
+    # 遍历所有定义的模块（MODULE_INPUT_NUM的键值）
+    # 有六列，每一列存放对应模块的有效值
     for n_m, m in enumerate(module_names):
         # a module can be run only when stack ptr position satisfies
         # (min_ptr_pos <= ptr <= max_ptr_pos), where max_ptr_pos is inclusive
-        # 1) minimum position:
-        #    stack need to have MODULE_INPUT_NUM[m] things to pop from
+        # 1) minimum position: 最小的位置
+        #    stack need to have MODULE_INPUT_NUM[m] things to pop from 堆栈需要弹出MODULE_INPUT_NUM[m]个元素
+        # min_ptr_pos保证这个模块运算输入的需要
         min_ptr_pos = MODULE_INPUT_NUM[m]
+        # 堆栈指针差值：MODULE_OUTPUT_NUM[m] - MODULE_INPUT_NUM[m]
+        # 保证指针+差值 <= 4（默认值） - 1 = 3（栈顶）
         # the stack ptr diff=(MODULE_OUTPUT_NUM[m] - MODULE_INPUT_NUM[m])
         # ensure that ptr + diff <= stack_len - 1 (stack top)
+        # max_ptr_pos保证经过这个模块的运算后堆栈不会溢出
         max_ptr_pos = (
                 stack_len - 1 + MODULE_INPUT_NUM[m] - MODULE_OUTPUT_NUM[m])
+        # 在每一列有效栈深的序号处置一
         module_validity_mat[min_ptr_pos:max_ptr_pos + 1, n_m] = 1.
 
     return module_validity_mat

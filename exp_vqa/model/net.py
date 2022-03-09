@@ -14,19 +14,19 @@ class XNMNet(nn.Module):
         """
         kwargs:
              vocab,
-             dim_v, # vertex and edge embedding of scene graph
-             dim_word, # word embedding
-             dim_hidden, # hidden of seq2seq
-             dim_vision,
-             dim_edge,
-             glimpses,
-             cls_fc_dim, 融合后中间层的维数
-             dropout_prob,
-             T_ctrl,
-             stack_len,
+             dim_v, # vertex and edge embedding of scene graph 默认是512
+             dim_word, # word embedding 默认300
+             dim_hidden, # hidden of seq2seq 默认1024
+             dim_vision, 默认2048
+             dim_edge, 默认256
+             glimpses, 默认2
+             cls_fc_dim, 融合后中间层的维数 默认1024
+             dropout_prob, 默认0.5
+             T_ctrl, 默认3
+             stack_len, 默认为4
              device,
-             use_gumbel,
-             use_validity,
+             use_gumbel, 默认False
+             use_validity, 默认True
         """
         super().__init__()
         for k, v in kwargs.items():
@@ -58,23 +58,36 @@ class XNMNet(nn.Module):
         # 取出所有在question中出现的token的数量
         self.num_token = len(self.vocab['question_token_to_idx'])
         # token embedding在train.py中将权重设置为glove的预训练权重
+        # dim_word应该是300维，对应glove的embedding维度
         self.token_embedding = nn.Embedding(self.num_token, self.dim_word)
         self.dropout = nn.Dropout(self.dropout_prob)
 
         # modules
         # Sec.3中提到的各种模块
         # （这一部分核心模块，有点难看）-------------------------------------------------------------------------------------
+        # 取输入的模块种类数
+        # MODULE_INPUT_NUM = {
+        #     '_NoOp': 1,
+        #     '_Find': 0,
+        #     '_Transform': 1,
+        #     '_Filter': 1,
+        #     '_And': 2,
+        #     '_Describe': 1,
+        # }
         self.module_names = modules.MODULE_INPUT_NUM.keys()
         self.num_module = len(self.module_names)
 
+        # module_funcs获取在composite_modules里MODULE_INPUT_NUM键值中的所有模块的传参实例化对象，参数由kwargs指定
         self.module_funcs = [getattr(modules, m[1:] + 'Module')(**kwargs) for m in self.module_names]
+        # stack_len默认为4
         self.module_validity_mat = modules._build_module_validity_mat(self.stack_len, self.module_names)
         self.module_validity_mat = torch.Tensor(self.module_validity_mat).to(self.device)
 
         for name, func in zip(self.module_names, self.module_funcs):
+            # e.g. 相当于self.name = func
             self.add_module(name, func)
 
-        # question encoder
+        # question encoder dim_word为300，dim_hidden为1024
         self.question_encoder = BiGRUEncoder(self.dim_word, self.dim_hidden)
 
         # controller
