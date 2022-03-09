@@ -300,6 +300,12 @@ def main(args):
         print(glove_matrix.shape)
 
     print('Writing')
+    # 存储进pt文件的内容如下：
+    # questions：转成np.array格式的填充完毕的question每一个token编码转成的列表，填充长度是最大的问题编码序列长度
+    # questions_len：每一个question的长度的列表也转换为np.array格式
+    # image_idxs：每一个annotation对应的图像id
+    # answers：每一个annotation有多个answer，每个answer对应一个编码，组成对应的编码列表
+    # glove：question出现的所有token的对应glove embedding向量
     obj = {
         'questions': questions_encoded,
         'questions_len': questions_len,

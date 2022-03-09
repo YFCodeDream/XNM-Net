@@ -58,12 +58,11 @@ def main():
         for filename in os.listdir(args.input_tsv_folder):
             if not '.tsv' in filename:
                 continue
-            # 获取解压后的每一个存储了图像特征的tsv文件
-            # （每个tsv文件里应该存着36行，每一行是一个图像特征）
+            # 获取解压后的存储了每一个图像特征的tsv文件
             full_filename = os.path.join(args.input_tsv_folder, filename)
             fd = open(full_filename, 'r')
             reader = csv.DictReader(fd, delimiter='\t', fieldnames=FIELDNAMES)
-            # 把每一张图片存储的tsv特征存入列表中
+            # 就一个reader，因为就一个tsv文件，存储了所有特征（train/val/test中的一个）
             readers.append(reader)
 
         # itertools.chain.from_iterable将多个迭代器连接起来

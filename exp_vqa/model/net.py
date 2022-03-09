@@ -33,6 +33,7 @@ class XNMNet(nn.Module):
             # 将传入的参数初始化为属性
             setattr(self, k, v)
 
+        # vocab['answer_token_to_idx']，出现过的answer个数（默认为3000）
         self.num_classes = len(self.vocab['answer_token_to_idx'])
 
         # 在最后答案预测时使用
@@ -51,8 +52,10 @@ class XNMNet(nn.Module):
         # 两个点的表示到一条边的表示的映射
         self.map_two_v_to_edge = nn.Sequential(
             nn.Dropout(self.dropout_prob),
+            # 这里对应两个node embedding的拼接维度
             nn.Linear(self.dim_v * 2, self.dim_edge, bias=False),
         )
+        # 取出所有在question中出现的token的数量
         self.num_token = len(self.vocab['question_token_to_idx'])
         # token embedding在train.py中将权重设置为glove的预训练权重
         self.token_embedding = nn.Embedding(self.num_token, self.dim_word)
@@ -187,13 +190,14 @@ class Fusion(nn.Module):
         super().__init__()
 
     def forward(self, x, y):
+        # x与y同维度，进行如下运算
         return - (x - y) ** 2 + F.relu(x + y)
 
 
 # noinspection PyMethodOverriding
 class Classifier(nn.Sequential):
     def __init__(self, in_features, mid_features, out_features, drop):
-        # in_features是个元组
+        # in_features是个元组，存储两个部分的feature维度
         super().__init__()
         self.drop = nn.Dropout(drop)
         self.relu = nn.ReLU()
@@ -204,6 +208,8 @@ class Classifier(nn.Sequential):
         self.bn = nn.BatchNorm1d(mid_features)
 
     def forward(self, x, y):
+        # self.lin11(self.drop(x))和self.lin12(self.drop(y))都是以mid_features为输出维度
         x = self.fusion(self.lin11(self.drop(x)), self.lin12(self.drop(y)))
+        # 过一个bn层，一个dropout，最后输出维度为out_features
         x = self.lin2(self.drop(self.bn(x)))
         return x
