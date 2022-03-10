@@ -5,24 +5,41 @@ from itertools import chain
 
 
 class Controller(nn.Module):
+    """
+    遵循Explainable Neural Computation via Stack Neural Module Networks模型架构
+    Sec3.1 布局控制器
+    从net.py传来的参数
+    controller_kwargs = {
+            'num_module': len(self.module_names), 值为6
+            'dim_lstm': self.dim_hidden, 值为1024
+            'T_ctrl': self.T_ctrl, 默认为3，controller decode length
+            'use_gumbel': self.use_gumbel, 默认为False，whether use gumbel softmax for module prob
+        }
+    """
     def __init__(self, **kwargs):
         super().__init__()
+
         self.num_module = kwargs['num_module']
         self.dim_lstm = kwargs['dim_lstm']
         self.T_ctrl = kwargs['T_ctrl']
         self.use_gumbel = kwargs['use_gumbel']
 
         self.fc_q_list = []  # W_1^{(t)} q + b_1
+
         for t in range(self.T_ctrl):
             self.fc_q_list.append(nn.Linear(self.dim_lstm, self.dim_lstm))
             self.add_module('fc_q_%d' % t, self.fc_q_list[t])
+
         self.fc_q_cat_c = nn.Linear(2 * self.dim_lstm, self.dim_lstm)  # W_2 [q;c] + b_2
+
         self.fc_module_weight = nn.Sequential(
             nn.Linear(self.dim_lstm, self.dim_lstm),
             nn.ReLU(),
             nn.Linear(self.dim_lstm, self.num_module)
         )
+
         self.fc_raw_cv = nn.Linear(self.dim_lstm, 1)
+
         self.c_init = nn.Parameter(torch.zeros(1, self.dim_lstm).normal_(mean=0, std=np.sqrt(1 / self.dim_lstm)))
 
     def forward(self, lstm_seq, q_encoding, embed_seq, seq_length_batch):

@@ -59,6 +59,7 @@ class XNMNet(nn.Module):
         self.num_token = len(self.vocab['question_token_to_idx'])
         # token embedding在train.py中将权重设置为glove的预训练权重
         # dim_word应该是300维，对应glove的embedding维度
+        # 先把问题编码序列的每一个编码转成one hot向量（维度为num_token），再乘上embedding矩阵，得到分布式表示
         self.token_embedding = nn.Embedding(self.num_token, self.dim_word)
         self.dropout = nn.Dropout(self.dropout_prob)
 
@@ -109,16 +110,23 @@ class XNMNet(nn.Module):
     def forward(self, questions, questions_len, vision_feat, relation_mask):
         """
         Args:
-            questions [Tensor] (batch_size, seq_len)
+            questions [Tensor] (batch_size, seq_len) seq_len：最大的问题编码序列长度
             questions_len [Tensor] (batch_size)
             vision_feat (batch_size, dim_vision, num_feat)
             relation_mask (batch_size, num_feat, num_feat)
         """
         batch_size = len(questions)
+
+        # permute是将0维和1维换顺序
         questions = questions.permute(1, 0)  # (seq_len, batch_size)
+
         questions_embedding = self.token_embedding(questions)  # (seq_len, batch_size, dim_word)
+
         questions_embedding = torch.tanh(self.dropout(questions_embedding))
+
+        # 这里questions_embedding的size是(seq_len, batch_size, dim_word)
         questions_outputs, questions_hidden = self.question_encoder(questions, questions_embedding, questions_len)
+
         module_logits, module_probs, c_list, cv_list = self.controller(
             questions_outputs, questions_hidden, questions_embedding, questions_len)
 

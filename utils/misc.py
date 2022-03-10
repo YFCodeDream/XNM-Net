@@ -65,16 +65,28 @@ def reverse_padded_sequence(inputs, lengths, batch_first=False):
     """
 
     if not batch_first:
+        # 如果batch_first为False，则把input的batch维度放在0维
         inputs = inputs.transpose(0, 1)
     if inputs.size(0) != len(lengths):
         raise ValueError('inputs incompatible with lengths.')
+    # 这里每一个batch里的每一行相当于问题编码序列的一个编码转换成的embedding向量
+    # 所以把问题编码序列的编码逆序，就相当于把第1维的数据逆序（input有0，1，2维）
+    # reversed_indices的第0维是batch_size，存储的元素是0-（编码序列长度-1）的列表
     reversed_indices = [list(range(inputs.size(1)))
                         for _ in range(inputs.size(0))]
+
+    # lengths是存储序列中每一个向量元素个数的列表
     for i, length in enumerate(lengths):
         if length > 0:
+            # 因为length是有元素的部分，因此将0-（length-1）逆序就行了，后面的padding为0不需要逆序
             reversed_indices[i][:length] = reversed_indices[i][length - 1::-1]
+
+    # 将逆序的顺序扩展成input的维度
     reversed_indices = torch.LongTensor(reversed_indices).unsqueeze(2).expand_as(inputs).to(inputs.device)
+    # 然后按照生成的逆序的顺序重新编排input
     reversed_inputs = torch.gather(inputs, 1, reversed_indices)
+
+    # 最后返回与input维度相同的逆序的序列，每一个batch中每一行都是对应原来的对称位置上的embedding
     if not batch_first:
         reversed_inputs = reversed_inputs.transpose(0, 1)
     return reversed_inputs
