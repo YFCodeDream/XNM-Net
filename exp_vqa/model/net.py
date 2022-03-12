@@ -8,7 +8,7 @@ from .questionEncoder import BiGRUEncoder
 from .controller import Controller
 
 
-# noinspection PyIncorrectDocstring,PyProtectedMember
+# noinspection PyIncorrectDocstring,PyProtectedMember,GrazieInspection
 class XNMNet(nn.Module):
     def __init__(self, **kwargs):
         """
@@ -17,7 +17,7 @@ class XNMNet(nn.Module):
              dim_v, # vertex and edge embedding of scene graph 默认是512
              dim_word, # word embedding 默认300
              dim_hidden, # hidden of seq2seq 默认1024
-             dim_vision, 默认2048
+             dim_vision, 默认2048，spatial为True，则为2053
              dim_edge, 默认256
              glimpses, 默认2
              cls_fc_dim, 融合后中间层的维数 默认1024
@@ -80,7 +80,7 @@ class XNMNet(nn.Module):
 
         # module_funcs获取在composite_modules里MODULE_INPUT_NUM键值中的所有模块的传参实例化对象，参数由kwargs指定
         self.module_funcs = [getattr(modules, m[1:] + 'Module')(**kwargs) for m in self.module_names]
-        # stack_len默认为4
+        # stack_len默认为4，module_validity_mat维度为（4，6）
         self.module_validity_mat = modules._build_module_validity_mat(self.stack_len, self.module_names)
         self.module_validity_mat = torch.Tensor(self.module_validity_mat).to(self.device)
 
@@ -100,6 +100,7 @@ class XNMNet(nn.Module):
         }
         self.controller = Controller(**controller_kwargs)
 
+        # 模块参数初始化
         for m in self.modules():
             if isinstance(m, nn.Linear) or isinstance(m, nn.Conv1d) or isinstance(m, nn.Conv2d):
                 nn.init.xavier_uniform_(m.weight)
@@ -112,8 +113,13 @@ class XNMNet(nn.Module):
         Args:
             questions [Tensor] (batch_size, seq_len) seq_len：最大的问题编码序列长度
             questions_len [Tensor] (batch_size)
-            vision_feat (batch_size, dim_vision, num_feat)
-            relation_mask (batch_size, num_feat, num_feat)
+            vision_feat (batch_size, dim_vision, num_feat) (batch_size, 2053(2048+5), 36)
+            relation_mask (batch_size, num_feat, num_feat) (batch_size, 36, 36)
+
+            # question：转成np.array格式的填充完毕的question每一个token编码转成的列表，填充长度是最大的问题编码序列长度
+            # questions_len：转换为np.array格式的每一个question的长度的列表
+            # vision_feat：如果使用空间特征，就把对应的x1,y1,x2,y2,bounding box面积拼接在2048维特征后，变成2053维
+            # relation_mask：36个bounding box是否有重叠的标记矩阵，有重叠则在对应位置记为1，为对称矩阵
         """
         batch_size = len(questions)
 
@@ -127,59 +133,128 @@ class XNMNet(nn.Module):
         # 这里questions_embedding的size是(seq_len, batch_size, dim_word)
         questions_outputs, questions_hidden = self.question_encoder(questions, questions_embedding, questions_len)
 
+        # 从布局控制器里获取存有所有时间步的运行结果
         module_logits, module_probs, c_list, cv_list = self.controller(
             questions_outputs, questions_hidden, questions_embedding, questions_len)
 
-        # feature processing
+        # feature processing 特征处理
+        # 此时的vision_feat是(batch_size, 2053, 36)维度
+        # vision_feat.norm(p=2, dim=1, keepdim=True)对第1维，即每个bounding box对应的2053维特征求平方和再开根号
+        # 起到归一化的作用，1e-12防止被除数为0
         vision_feat = vision_feat / (vision_feat.norm(p=2, dim=1, keepdim=True) + 1e-12)
+
+        # feat_inputs: (batch_size, 36, 2053)
         feat_inputs = vision_feat.permute(0, 2, 1)
+
+        # dim_v一开始默认为512，dim_vision为2053（spatial为True）
         if self.dim_v != self.dim_vision:
+            # Dropout+Linear，过一个线性层，将2053维转成512维
+            # feat_inputs维度为（batch_size, 36, 512）
             feat_inputs = self.map_vision_to_v(feat_inputs)  # (batch_size, num_feat, dim_v)
+
+        # num_feat = 36
         num_feat = feat_inputs.size(1)
+
+        # feat_inputs_expand_0将一个batch里的每一个(36, 512)的特征拷贝了num_feat份，所以一个batch里每个元素都是(36, 36, 512)维
+        # feat_inputs_expand_0最后两维(36, 512)仍然对应着feat_inputs的最后两维(36, 512)
         feat_inputs_expand_0 = feat_inputs.unsqueeze(1).expand(batch_size, num_feat, num_feat, self.dim_v)
+
+        # feat_inputs_expand_1将一个batch里的图像特征中的每一个bounding box的特征拷贝了num_feat份
+        # feat_inputs_expand_1最后两维(36, 512)仅仅是将一个bounding box的512维特征拷贝了36份，每一行都相同，第1维的36对应着feat_inputs的第1维
         feat_inputs_expand_1 = feat_inputs.unsqueeze(2).expand(batch_size, num_feat, num_feat, self.dim_v)
+
+        # 这里对应Explainable and Explicit Visual Reasoning over Scene Graphs的Sec3.1
+        # 将DET场景图的边表示为e_{i, j}=[v_i; v_j]，仅连接两个点的特征向量作为edge embedding
+        # 其实依据代码来看，并不能称之为严格的场景图，应将其称之为一张图像的bounding box的相关图
         feat_edge = torch.cat([feat_inputs_expand_0, feat_inputs_expand_1], dim=3)  # (bs, num_feat, num_feat, 2*dim_v)
+
+        # Dropout+Linear，过一个线性层，将2*512维转成256维
+        # feat_edge维度为(batch_size, 36, 36, 256)
         feat_edge = self.map_two_v_to_edge(feat_edge)
 
-        # stack initialization
+        # stack initialization 初始化可微堆栈，glimpses默认为2
+        # att_stack维度: (batch_size, 36, 2, 4)，初始化为全零
         att_stack = torch.zeros(batch_size, num_feat, self.glimpses, self.stack_len).to(self.device)
+
+        # stack_ptr存batch_size个栈顶指针p，每个p为stack_len维的one hot向量，维度为(batch_size, stack_len(4))
         stack_ptr = torch.zeros(batch_size, self.stack_len).to(self.device)
+
+        # 初始化栈顶指针p在第一个元素
+        # 对应Explainable Neural Computation via Stack Neural Module Networks的Sec3.3
         stack_ptr[:, 0] = 1
+
+        # mem维度(batch_size, 2*2053)
         mem = torch.zeros(batch_size, self.glimpses * self.dim_vision).to(self.device)
 
-        # cache for visualization
+        # cache for visualization 用于可视化的缓存
         cache_module_prob = []
         cache_att = []
 
+        # 遍历所有时间步
         for t in range(self.T_ctrl):
+            # 取出第t个时间步的文本参数，维度为(batch_size, dim_lstm(即dim_hidden))
             c_i = c_list[t]  # (batch_size, dim_hidden)
+
+            # 取出第t个时间步的经过softmax前的logits向量，表示所有模块的权重
             module_logit = module_logits[t]  # (batch_size, num_module)
+
+            # use_validity默认为True
             if self.use_validity:
-                if t < self.T_ctrl - 1:
+                if t < self.T_ctrl - 1: # 如果当前时间步不是最后一个时间步
+                    # (batch_size, stack_len(4)) * (stack_len(4), num_module(6))
+                    # 计算得到module_validity，为模块的有效布尔向量，只有在模块有效的范围内才能对元素进行操作
+                    # module_validity用以标记当前batch中每一个样本（一行对应一个样本），哪一个模块是有效的
                     module_validity = torch.matmul(stack_ptr, self.module_validity_mat)
+
+                    # 将最后一列的模块（Describe）置为无效
                     module_validity[:, 5] = 0
                 else:  # last step must describe
+                    # 最后一步必须为Describe，因此直接将其余模块有效性置零，将最后一列的模块（Describe）有效性置一
                     module_validity = torch.zeros(batch_size, self.num_module).to(self.device)
                     module_validity[:, 5] = 1
+
+                # 将模块有效性取反再赋值给module_invalidity
                 module_invalidity = (1 - torch.round(module_validity)).byte()  # hard validate
+
+                # 将无效的模块的logit向量置为-inf，过一个softmax就归零了
                 module_logit.masked_fill_(module_invalidity, -float('inf'))
+
                 module_prob = F.gumbel_softmax(module_logit, hard=self.use_gumbel)
             else:
+                # 如果不用有效性检验，就直接取布局控制器的输出
                 module_prob = module_probs[t]
+
+            # 原来的module_prob是(batch_size, num_module)
             module_prob = module_prob.permute(1, 0)  # (num_module, batch_size)
 
-            # run all modules
+            # run all modules 执行所有模块
+
+            # vision_feat.permute(0, 2, 1)维度是(batch_size, 36, 2053)
+            # feat_inputs维度为（batch_size, 36, 512）
+            # feat_edge维度为(batch_size, 36, 36, 256)
+            # c_i: 第t个时间步的文本参数，维度为(batch_size, dim_lstm(即dim_hidden))
+            # relation_mask维度为(batch_size, 36, 36)
+            # att_stack维度: (batch_size, 36, 2, 4)
+            # stack_ptr存batch_size个栈顶指针p，每个p为stack_len维的one hot向量，维度为(batch_size, stack_len(4))
+            # mem维度(batch_size, 2*2053)
+
             res = [
                 f(vision_feat.permute(0, 2, 1), feat_inputs, feat_edge, c_i, relation_mask, att_stack, stack_ptr, mem)
                 for f in self.module_funcs]
+
             att_stack_avg = torch.sum(
                 module_prob.view(self.num_module, batch_size, 1, 1, 1) * torch.stack([r[0] for r in res]), dim=0)
+
             stack_ptr_avg = torch.sum(
                 module_prob.view(self.num_module, batch_size, 1) * torch.stack([r[1] for r in res]), dim=0)
+
             stack_ptr_avg = modules._sharpen_ptr(stack_ptr_avg, hard=False)
+
             mem_avg = torch.sum(module_prob.view(self.num_module, batch_size, 1) * torch.stack([r[2] for r in res]),
                                 dim=0)
+
             att_stack, stack_ptr, mem = att_stack_avg, stack_ptr_avg, mem_avg
+
             # cache for visualization
             cache_module_prob.append(module_prob)
             atts = []

@@ -155,6 +155,7 @@ class VQADataset(Dataset):
         # image_idx：图像的coco_id
         # answer：出现次数的统计向量，维度是vocab['answer_token_to_idx']的长度（3000）
         # question：转成np.array格式的填充完毕的question每一个token编码转成的列表，填充长度是最大的问题编码序列长度
+        # questions_len：转换为np.array格式的每一个question的长度的列表
         # vision_feat：如果使用空间特征，就把对应的x1,y1,x2,y2,bounding box面积拼接在2048维特征后，变成2053维
         # relation_mask：36个bounding box是否有重叠的标记矩阵，有重叠则在对应位置记为1，为对称矩阵
         return image_idx, answer, question, question_len, vision_feat, relation_mask

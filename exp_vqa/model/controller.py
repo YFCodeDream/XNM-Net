@@ -128,6 +128,7 @@ class Controller(nn.Module):
             # cv_list每一个元素的维度是（batch_size, seq_max_len），每一行是单词的权重
             cv_list.append(cv_i.squeeze(2).permute(1, 0))
 
+        # 最后将存储所有时间步运行结果的堆叠tensor返回
         return (torch.stack(module_logit_list),  # [T_ctrl, batch_size, num_module]
                 torch.stack(module_prob_list),  # [T_ctrl, batch_size, num_module]
                 torch.stack(c_list),  # [T_ctrl, batch_size, d]
