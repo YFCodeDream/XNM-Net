@@ -225,6 +225,9 @@ def _move_ptr_fw(stack_ptr):
     Move the stack pointer forward (i.e. to push to stack).
     stack_ptr: (batch_size, stack_len)
     Return: (batch_size, stack_len)
+    向前移动堆栈指针
+    遵循Explainable Neural Computation via Stack Neural Module Networks运算方式
+    将stack_ptr赋值为：一维卷积(stack_ptr, [0, 0, 1])
     """
     filter_fw = torch.FloatTensor([1, 0, 0]).view(1, 1, 3).to(stack_ptr.device)
     batch_size, stack_len = stack_ptr.size()
@@ -341,7 +344,7 @@ def _write_to_stack(att_stack, stack_ptr, att):
     #              |
     #              |
     # tensor([[[[0.7500, 0.6897, 0.2026, 0.2006], <-- glimpse_1，维度是栈深    ---
-    #           [0.7500, 0.9997, 0.4420, 0.5310]], <-- glimpse_2                | 一个batch
+    #           [0.7500, 0.9997, 0.4420, 0.5310]], <-- glimpse_2                | batch中的一个数据（一张图像）
     #          [[0.5501, 0.9777, 0.4308, 0.1216],                               |
     #           [0.5501, 0.8881, 0.8291, 0.9359]]],                          ---
     #         ---------------------------------------------------

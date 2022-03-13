@@ -183,7 +183,7 @@ class XNMNet(nn.Module):
         # 对应Explainable Neural Computation via Stack Neural Module Networks的Sec3.3
         stack_ptr[:, 0] = 1
 
-        # mem维度(batch_size, 2*2053)
+        # mem维度(batch_size, 2*2053)，初始化为全零张量
         mem = torch.zeros(batch_size, self.glimpses * self.dim_vision).to(self.device)
 
         # cache for visualization 用于可视化的缓存
@@ -238,39 +238,54 @@ class XNMNet(nn.Module):
             # stack_ptr存batch_size个栈顶指针p，每个p为stack_len维的one hot向量，维度为(batch_size, stack_len(4))
             # mem维度(batch_size, 2*2053)
 
+            # 在每个模块上执行运算，获得对应的结果
+            # 返回注意力堆栈att_stack, 堆栈指针stack_ptr, mem
             res = [
                 f(vision_feat.permute(0, 2, 1), feat_inputs, feat_edge, c_i, relation_mask, att_stack, stack_ptr, mem)
                 for f in self.module_funcs]
 
+            # 将每一个堆栈的结果乘上对应的权重，做加权求和
             att_stack_avg = torch.sum(
+                # r[0]为att_stack
                 module_prob.view(self.num_module, batch_size, 1, 1, 1) * torch.stack([r[0] for r in res]), dim=0)
 
+            # 将堆栈指针也进行加权求和
             stack_ptr_avg = torch.sum(
+                # r[1]为stack_ptr堆栈指针
                 module_prob.view(self.num_module, batch_size, 1) * torch.stack([r[1] for r in res]), dim=0)
 
             stack_ptr_avg = modules._sharpen_ptr(stack_ptr_avg, hard=False)
 
+            # 其实就是Describe模块的结果乘上Describe模块的权重
             mem_avg = torch.sum(module_prob.view(self.num_module, batch_size, 1) * torch.stack([r[2] for r in res]),
                                 dim=0)
 
+            # 更新中间结果(att_stack, stack_ptr, mem)
             att_stack, stack_ptr, mem = att_stack_avg, stack_ptr_avg, mem_avg
 
             # cache for visualization
+            # 保存每次的模块权重
             cache_module_prob.append(module_prob)
             atts = []
             for r in res:
+                # 取出当前栈指针指向的注意
                 att = modules._read_from_stack(r[0], r[1])  # (batch_size, att_dim, glimpse)
                 atts.append(att)
             cache_att.append(atts)
 
         # Part 1. features from scene graph module network. (batch, dim_v)
         # Part 2. question prior. (batch, dim_hidden)
+        # 运行完指定时间步之后，融合bounding box相关图特征以及问题特征
+        # 预测对应答案
         predicted_logits = self.classifier(mem, questions_hidden)
+
+        # 将其余的推理过程中的数据返回
         others = {
             'module_prob': cache_module_prob,  # (T, num_module, batch_size)
             'att': cache_att,  # (T, num_module, batch_size, att_dim, glimpse)
             'cv': cv_list,  # (T, batch_size, len)
         }
+
         return predicted_logits, others
 
 
